@@ -1,0 +1,22 @@
+# Środowisko wirtualne Python
+venv/
+ENV/
+env/
+
+# Klucze, ścieżki i zmienne środowiskowe (BARDZO WAŻNE)
+.env
+
+# Baza wektorowa ChromaDB (generowana lokalnie, waży dużo)
+chroma_db/
+
+# Pliki podręczne Pythona (bytecode)
+__pycache__/
+*.py[cod]
+
+# Pliki dokumentów (jeśli plik PDF zawiera prywatne dane, odkomentuj poniższą linię)
+# *.pdf
+
+# Pliki systemowe i edytorów
+.DS_Store
+.vscode/
+.idea/
