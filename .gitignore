@@ -2,12 +2,14 @@
 venv/
 ENV/
 env/
+.venv/
 
 # Klucze, ścieżki i zmienne środowiskowe (BARDZO WAŻNE)
 .env
 
 # Baza wektorowa ChromaDB (generowana lokalnie, waży dużo)
 chroma_db/
+documents/*.pdf
 
 # Pliki podręczne Pythona (bytecode)
 __pycache__/
@@ -20,3 +22,7 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# Front
+node_modules/
+dist/
