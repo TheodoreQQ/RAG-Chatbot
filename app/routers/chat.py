@@ -1,10 +1,13 @@
 from fastapi import APIRouter
-from app.models import ChatRequest, ChatResponse
-from app.rag_engine import rag_engine
+from app.models import ChatRequest
+from app.services.rag_service import rag_service
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
-@router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-  reponse_text = rag_engine.generate_response(request.message, request.history)
-  return ChatResponse(response=reponse_text)
+@router.post("")
+async def chat_stream(request: ChatRequest):
+    return StreamingResponse(
+        rag_service.generate_streaming_response(request.message, request.history),
+        media_type="text/event-stream"
+    )
