@@ -1,15 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Bot, User, Loader2 } from 'lucide-react';
 
-const API_URL = "http://127.0.0.1:8000";
-
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     { role: 'assistant', content: 'Witaj! W czym mogę Ci dzisiaj pomóc?' }
   ]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
+  
+  // 🟢 Dwa osobne stany do kontroli UI:
+  const [isThinking, setIsThinking] = useState(false); // Pokazuje skaczące kropki
+  const [isGenerating, setIsGenerating] = useState(false); // Blokuje input na czas całej odpowiedzi
+
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -18,43 +20,88 @@ export default function ChatWidget() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, loading]);
+  }, [messages, isThinking]);
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
+  const handleSendMessage = async (e) => {
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
 
-    const userText = input.trim();
+    // Blokujemy wysyłanie, gdy trwa proces myślenia LUB pisania
+    if (!input.trim() || isGenerating) {
+      return;
+    }
+
+    const userMessageText = input.trim();
     setInput('');
+    
+    // Włączamy blokady
+    setIsGenerating(true); 
+    setIsThinking(true);
 
-    // Dodajemy wiadomość użytkownika
-    const newMessages = [...messages, { role: 'user', content: userText }];
-    setMessages(newMessages);
-    setLoading(true);
+    const updatedHistory = [...messages, { role: 'user', content: userMessageText }];
+    setMessages(updatedHistory);
 
     try {
-      // Przygotowujemy historię dla FastAPI (bez powitania startowego)
-      const historyForApi = newMessages.slice(1, -1);
-
-      const res = await fetch(`${API_URL}/chat`, {
+      const response = await fetch('http://127.0.0.1:8000/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          message: userText,
-          history: historyForApi
-        })
+          message: userMessageText,
+          history: messages,
+        }),
       });
 
-      const data = await res.json();
-
-      if (res.ok) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-      } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: 'Przepraszam, wystąpił błąd serwera.' }]);
+      if (!response.ok) {
+        throw new Error(`Błąd serwera: ${response.status}`);
       }
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Brak połączenia z serwerem API.' }]);
+
+      if (!response.body) return;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let isFirstChunk = true;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+
+        if (chunk) {
+          if (isFirstChunk) {
+            isFirstChunk = false;
+            setIsThinking(false); // 🟢 Wyłączamy TYLKO skaczące kropki, ale input DALEJ JEST ZABLOKOWANY!
+            
+            setMessages((prev) => [
+              ...prev,
+              { role: 'assistant', content: chunk }
+            ]);
+          } else {
+            setMessages((prevMessages) => {
+              const updated = [...prevMessages];
+              const lastIndex = updated.length - 1;
+              updated[lastIndex] = {
+                ...updated[lastIndex],
+                content: updated[lastIndex].content + chunk,
+              };
+              return updated;
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Błąd podczas streamingu:', error);
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'Wystąpił błąd podczas pobierania odpowiedzi.' }
+      ]);
     } finally {
-      setLoading(false);
+      // 🟢 Dopiero GDY CAŁY STRUMIEŃ SIĘ SKOŃCZY, odblokowujemy input!
+      setIsThinking(false);
+      setIsGenerating(false);
     }
   };
 
@@ -111,32 +158,45 @@ export default function ChatWidget() {
               </div>
             ))}
 
-            {loading && (
-              <div className="flex items-center gap-2 text-slate-600 text-xs italic">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" /> Asystent generuje odpowiedź...
+            {/* LOADER (KROPKI) – widoczny tylko gdy backend przetwarza (isThinking) */}
+            {isThinking && (
+              <div className="flex gap-1.5 mr-auto max-w-[80%] items-center">
+                <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-800 flex items-center justify-center shrink-0">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div className="p-3 bg-white border border-slate-300 shadow-sm rounded-2xl rounded-tl-none flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
+                </div>
               </div>
             )}
+            
             <div ref={messagesEndRef} />
           </div>
 
           {/* POLE INPUT */}
-          <div className="p-3 bg-white border-t border-slate-200 flex gap-2">
+          <form onSubmit={handleSendMessage} className="p-3 bg-white border-t border-slate-200 flex gap-2">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Zadaj pytanie..."
-              className="flex-1 px-4 py-3 border border-slate-400 rounded-full text-xs outline-none focus:border-indigo-300 transition-colors"
+              disabled={isGenerating}
+              placeholder={isGenerating ? "Asystent odpowiada..." : "Zadaj pytanie..."}
+              className="flex-1 px-4 py-3 border border-slate-400 rounded-full text-xs outline-none focus:border-indigo-500 transition-colors disabled:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
             />
             <button
-              onClick={handleSend}
-              disabled={loading}
-              className="w-9 h-9 bg-indigo-500 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center transition-all disabled:opacity-50"
+              type="submit"
+              disabled={isGenerating || !input.trim()}
+              className="w-9 h-9 bg-indigo-500 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             >
-              <Send className="w-4 h-4" />
+              {isGenerating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
             </button>
-          </div>
+          </form>
         </div>
       )}
     </div>
