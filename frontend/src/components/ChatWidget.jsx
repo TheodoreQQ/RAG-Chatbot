@@ -8,7 +8,7 @@ export default function ChatWidget() {
   ]);
   const [input, setInput] = useState('');
   
-  // 🟢 Dwa osobne stany do kontroli UI:
+  // Dwa osobne stany do kontroli UI:
   const [isThinking, setIsThinking] = useState(false); // Pokazuje skaczące kropki
   const [isGenerating, setIsGenerating] = useState(false); // Blokuje input na czas całej odpowiedzi
 
@@ -73,7 +73,7 @@ export default function ChatWidget() {
         if (chunk) {
           if (isFirstChunk) {
             isFirstChunk = false;
-            setIsThinking(false); // 🟢 Wyłączamy TYLKO skaczące kropki, ale input DALEJ JEST ZABLOKOWANY!
+            setIsThinking(false); // Wyłączamy TYLKO skaczące kropki, ale input DALEJ JEST ZABLOKOWANY!
             
             setMessages((prev) => [
               ...prev,
@@ -99,7 +99,7 @@ export default function ChatWidget() {
         { role: 'assistant', content: 'Wystąpił błąd podczas pobierania odpowiedzi.' }
       ]);
     } finally {
-      // 🟢 Dopiero GDY CAŁY STRUMIEŃ SIĘ SKOŃCZY, odblokowujemy input!
+      // Dopiero GDY CAŁY STRUMIEŃ SIĘ SKOŃCZY, odblokowujemy input!
       setIsThinking(false);
       setIsGenerating(false);
     }
@@ -148,7 +148,7 @@ export default function ChatWidget() {
                 }`}>
                   {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                 </div>
-                <div className={`p-3 rounded-2xl text-xs leading-relaxed ${
+                <div className={`p-3 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
                   msg.role === 'user' 
                     ? 'bg-indigo-500 text-white rounded-tr-none' 
                     : 'bg-white text-slate-800 border border-slate-300 shadow-sm rounded-tl-none'
