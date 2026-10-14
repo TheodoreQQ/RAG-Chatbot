@@ -38,6 +38,10 @@ async def upload_documents(file: UploadFile = File(...)):
   # 2. Indeksowanie w ChromaDB (przez nasz wydzielony service)
   try: 
     rag_service.add_document(file_path, clean_filename)
+  except ValueError as ve:
+    if os.path.exists(file_path):
+      os.remove(file_path)
+    raise HTTPException(status_code=400, detail=str(ve))
   except Exception as ex:
     # Sprzątanie pliku z dysku w przypadku błędu
     if os.path.exists(file_path):
