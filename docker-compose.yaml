@@ -1,0 +1,77 @@
+
+services:
+  chromadb: 
+    image: chromadb/chroma:latest
+    container_name: assistant_chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - "chroma_data:/chroma/chroma"
+    environment:
+      # Enable persistent storage in the ChromaDB container.
+      - IS_PERSISTENT=TRUE
+      # Set the directory where ChromaDB stores its persistent data.
+      - PERSIST_DIRECTORY=/chroma/chroma 
+    # Attach ChromaDB to the shared application network.
+    networks:
+      - assistant_net
+  
+  backend:
+    build:
+      context: .
+      # Select the backend Dockerfile in the build context.
+      dockerfile: Dockerfile 
+    container_name: assistant_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./documents:/app/documents
+    # Set backend and integration connection settings.
+    environment:
+      # Bind the API to all interfaces inside its container.
+      - HOST=0.0.0.0
+      # Use the Compose service name to reach ChromaDB on the internal network.
+      - CHROMA_HOST=chromadb
+      # Connect to ChromaDB's container port.
+      - CHROMA_PORT=8000
+      # Reach Ollama running on the Docker host.
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Store uploaded documents in the mounted documents directory.
+      - UPLOAD_DIR=/app/documents
+    # Resolve host.docker.internal to the host gateway on supported Docker setups.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Start ChromaDB before starting the backend service.
+    depends_on:
+      - chromadb
+    # Attach the backend to the shared application network.
+    networks: 
+      - assistant_net 
+  
+  frontend:
+    build:
+      # Use ./frontend as the Docker build context.
+      context: ./frontend
+      # Select the frontend Dockerfile in that context.
+      dockerfile: Dockerfile
+    container_name: assistant_frontend
+    ports: 
+      - "3000:80"
+    # Start the backend service before the frontend service.
+    depends_on:
+      - backend 
+    # Attach the frontend to the shared application network.
+    networks:
+      - assistant_net 
+
+# Define the named volumes used by the services.
+volumes:
+  # Create a local Docker-managed volume for ChromaDB's data.
+  chroma_data:
+    driver: local 
+
+# Define the private bridge network shared by the application services.
+networks:
+  # Use Docker's bridge driver for service-to-service networking.
+  assistant_net:
+    driver: bridge 
