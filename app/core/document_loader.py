@@ -5,10 +5,11 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
 class DocumentLoader:
-  def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 150):
+  def __init__(self, chunk_size: int = 800, chunk_overlap: int = 150, separators: List = ["\n\n", "\n", ". ", " ", ""]):
     self.text_splitter = RecursiveCharacterTextSplitter(
       chunk_size=chunk_size,
-      chunk_overlap=chunk_overlap
+      chunk_overlap=chunk_overlap,
+      separators=separators
     )
 
   def load_and_split(self, file_path: str, file_name: str) -> List[Document]:
