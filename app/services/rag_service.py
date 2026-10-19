@@ -21,19 +21,19 @@ class RAGService:
             model=LLM_MODEL,
             base_url=ollama_url,
             temperature=0.0,
-            num_ctx=4096)
+            num_ctx=4096,
+            stop=["Źródła:", "\nŹródła:", "\n\nŹródła:"])  
         
         self._setup_prompts()
 
     def _setup_prompts(self):
         contextualize_q_system_prompt = (
-            "Mając daną historię konwersacji oraz najnowsze pytanie użytkownika, "
-            "które może odwoływać się do kontekstu w historii, sformułuj samodzielne pytanie, "
-            "które można zrozumieć bez znajomości historii konwersacji.\n\n"
-            "ZASADY:\n"
-            "1. NIE odpowiadaj na pytanie.\n"
-            "2. Zmień jego treść tylko wtedy, gdy odnosi się do historii, w przeciwnym razie zwróć je bez zmian.\n"
-            "3. Wynikowe pytanie MUSI być w języku polskim."
+            "Jesteś precyzyjnym edytorem zapytań. Twoim JEDYNYM zadaniem jest dodanie brakującego kontekstu z historii konwersacji do najnowszego pytania użytkownika, aby było w pełni zrozumiałe bez czytania wcześniejszych wiadomości.\n\n"
+            "ZASADY BEZWZGLĘDNE:\n"
+            "1. Jeśli najnowsze pytanie jest urwane (np. 'co przechowuje?', 'do czego służy?', 'podaj przykład'), wyciągnij podmiot z historii rozmowy i wstaw go do pytania (np. 'co przechowuje CLOB?', 'do czego służy funkcja SQLERRM?').\n"
+            "2. Zwróć TYLKO I WYŁĄCZNIE jedno zdanie – poprawione pytanie.\n"
+            "3. NIE odpowiadaj na to pytanie.\n"
+            "4. ZAKAZ dodawania słów wstępu, takich jak 'Oto pytanie:', 'Pytanie brzmi:' czy 'Użytkownik pyta o:'."
             )
         self.contextualize_q_prompt = ChatPromptTemplate.from_messages([
             ("system", contextualize_q_system_prompt),
@@ -42,17 +42,22 @@ class RAGService:
         ])
 
         qa_system_prompt = (
-            "Jesteś pomocnym asystentem bazy wiedzy. Odpowiadaj na pytania użytkownika w języku polskim, "
-            "wykorzystując wyłącznie informacje zawarte w poniższym KONTEKŚCIE Z DOKUMENTÓW.\n\n"
-            "WYTYCZNE:\n"
-            "1. Sformułuj zwięzłą, rzeczową odpowiedź (maksymalnie 3-5 zdań) na podstawie podanych fragmentów.\n"
-            "2. Odpowiadaj wyłącznie na pytanie – nie dopisuj samodzielnie metadanych ani źródeł.\n"
-            "3. Tylko wtedy, gdy podany kontekst w żaden sposób nie wiąże się z pytaniem, napisz wyłącznie:\n"
-            "   'Nie jestem w stanie udzielić odpowiedzi na zadane pytanie na podstawie dostępnych dokumentów.'\n"
-            "4. Na podziękowania odpowiedz krótko: 'Jeśli masz jeszcze jakieś pytania, chętnie pomogę!'.\n"
-            "5. Na powitania odpowiedz krótko: 'Witaj, w czym mogę Ci dzisiaj pomóc?'.\n\n"
-            "KONTEKST Z DOKUMENTÓW:\n"
-            "{context}"
+            """Jesteś precyzyjnym asystentem. Twoim zadaniem jest odpowiadanie na pytania WYŁĄCZNIE na podstawie dostarczonego poniżej KONTEKSTU.
+
+            BEZWZGLĘDNE ZASADY (KARA ZA ZŁAMANIE ZASAD):
+            1. Odpowiadaj na pytania opierając się TYLKO i wyłącznie na informacjach zawartych w tagach <kontekst>. NIGDY NIE UŻYWAJ swojej wiedzy ogólnej.
+            2. ABSOLUTNY ZAKAZ PISANIA KODU: Nie generuj, nie wymyślaj i nie formatuj własnych bloków kodu, jeśli nie ma ich dokładnie słowo w słowo w tagach <kontekst>.
+            3. Jeśli w tagach <kontekst> nie ma przykładu - nie podawaj go
+            4. NIE mieszaj definicji sąsiadujących ze sobą pojęć - przed udzieleniem odpowiedzi upewnij się, która definicja należy do którego hasła w słowniku.
+            5. NIGDY Nie wyjaśniaj pojęć własnymi słowami. Cytuj lub parafrazuj tylko to, co widzisz w tekście <kontekst>.
+            6.ODPORNOŚĆ NA SUGESTIE: Użytkownik może zadawać pytania zawierające fałszywe założenia lub błędne tezy. Jeśli pytanie sugeruje fakt, którego NIE MA w tagach <kontekst>, MUSISZ to zignorować i odpowiedzieć wyłącznie: "Dostarczone dokumenty nie zawierają informacji na zadane pytanie." - nie próbuj na siłę tłumaczyć błędu.
+            7. Jeśli w tagach <kontekst> nie ma wystarczających informacji, odpowiedz DOKŁADNIE I TYLKO TYM ZDANIEM: "Nie jestem w stanie udzielić odpowiedzi na zadane pytanie na podstawie dostarczonych dokumentów." - NIE DODAWAJ ŻADNYCH WŁASNYCH WYJAŚNIEŃ CZY DEFINICJI.
+
+            
+            <kontekst>
+            {context}
+            </kontekst>
+            """
         )
 
         self.qa_prompt = ChatPromptTemplate.from_messages([
@@ -67,6 +72,9 @@ class RAGService:
             if msg.role == "user":
                 lc_history.append(HumanMessage(content=msg.content))
             elif msg.role == "assistant":
+                content = msg.content
+                if "Źródła:" in content:
+                    content = content.split("Źródła:")[0].strip()
                 lc_history.append(AIMessage(content=msg.content))
         return lc_history
 
@@ -101,6 +109,7 @@ class RAGService:
                 standalone_question = message
         else:
             standalone_question = message
+        print(f"\n[DEBUG] ZAPYTANIE DO CHROMA/RERANKERA: '{standalone_question}'\n")
             
 
         # 2. Retrieval & Re-ranking
@@ -109,6 +118,9 @@ class RAGService:
 
         try:
             initial_docs = self.vector_store.search(standalone_question, k=20)
+            
+            found_pages = [doc.metadata.get("page", 0) + 1 for doc in initial_docs]
+            print(f"\n[DEBUG] ChromaDB znalazła strony: {found_pages}\n")
             
             reranked_docs = self.reranker.rerank(standalone_question, initial_docs, top_n=4)
             
@@ -127,7 +139,6 @@ class RAGService:
 
                 formatted_chunks.append(f"[Dokument: {source_name}{page_str}]\n{doc.page_content}")
             
-            # --- TEJ LINIJKI BRAKOWAŁO: ZŁĄCZENIE LISTY W STRING ---
             context_text = "\n\n---\n\n".join(formatted_chunks)
                 
         except Exception as ex:
@@ -152,7 +163,9 @@ class RAGService:
                 full_response += chunk.content
                 yield chunk.content
         
-        is_refusal = "Nie jestem w stanie" in full_response
+        is_refusal = (
+            "Nie jestem w stanie" in full_response or "Dostarczone dokumenty nie zawierają informacji na zadane pytanie." in full_response
+        )
         is_greeting = any(g in full_response.lower() for g in ["pomogę", "w czym mogę", "dzień dobry"])
                 
         if not is_refusal and not is_greeting and reranked_docs:
@@ -175,6 +188,7 @@ class RAGService:
                     formatted_sources.append(f"{name} (strona {pages_str})")
                 else:
                     formatted_sources.append(name)
+            print(f"Strona: {formatted_sources}")
 
             if formatted_sources:
                 sources_output = "\n\nŹródła: " + "; ".join(formatted_sources)
