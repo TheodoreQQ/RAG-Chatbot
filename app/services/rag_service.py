@@ -95,6 +95,23 @@ class RAGService:
 
     def generate_streaming_response(self, message: str, history: List[ChatMessage]) -> Generator[str, None, None]:
         """Główna logika RAG zwracająca strumień tokenów na żywo."""
+        
+        # --- 0. EARLY EXIT (Obsługa small talku) ---
+        msg_clean = message.strip().lower().rstrip('.!')
+
+        # Przechwytywanie powitań
+        greetings = ["cześć", "czesc", "hej", "witaj", "witam", "dzień dobry", "siema", "dobry wieczór", "hejka", "siemanko"]
+        if msg_clean in greetings:
+            yield "Cześć! W czym mogę Ci dzisiaj pomóc?"
+            return
+
+        # Przechwytywanie podziękowań
+        thanks = ["dziękuję", "dziekuje", "dzieki", "dzięki", "super", "super dzięki", "jasne, dzięki", "ok dzięki", "wielkie dzięki", "super, dzięki"]
+        if msg_clean in thanks:
+            yield "Cieszę się, że mogłem pomóc! Jakbyś miał jeszcze jakieś pytania, chętnie pomogę!"
+            return
+        # -------------------------------------------
+
         lc_history = self._convert_history(history)
 
         # 1. Query Rewriting
@@ -109,9 +126,9 @@ class RAGService:
                 standalone_question = message
         else:
             standalone_question = message
+            
         print(f"\n[DEBUG] ZAPYTANIE DO CHROMA/RERANKERA: '{standalone_question}'\n")
             
-
         # 2. Retrieval & Re-ranking
         context_text = ""
         reranked_docs = []
@@ -166,9 +183,8 @@ class RAGService:
         is_refusal = (
             "Nie jestem w stanie" in full_response or "Dostarczone dokumenty nie zawierają informacji na zadane pytanie." in full_response
         )
-        is_greeting = any(g in full_response.lower() for g in ["pomogę", "w czym mogę", "dzień dobry"])
                 
-        if not is_refusal and not is_greeting and reranked_docs:
+        if not is_refusal and reranked_docs:
             sources_dict = {}
             for doc in reranked_docs:
                 meta = getattr(doc, "metadata", {}) or {}
