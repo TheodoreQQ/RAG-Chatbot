@@ -1,8 +1,10 @@
 import os
+import time 
 from typing import List, Generator
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import LLM_MODEL
 from app.models import ChatMessage
@@ -10,35 +12,72 @@ from app.core.document_loader import DocumentLoader
 from app.core.vector_store import VectorStoreManager
 from app.core.reranker import Reranker
 from fastapi.responses import StreamingResponse
-
-ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 class RAGService:
     def __init__(self):
         self.loader = DocumentLoader()
         self.vector_store = VectorStoreManager()
         self.reranker = Reranker()
-        self.llm = ChatOllama(
+        
+        self._initialize_llms()
+        self._setup_prompts()
+
+
+    def _initialize_llms(self):
+        print("Uruchamiam główny model Ollama Qwen2.5")
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        self.ollama_llm = ChatOllama(
             model=LLM_MODEL,
             base_url=ollama_url,
             temperature=0.0,
             num_ctx=4096,
-            stop=["Źródła:", "\nŹródła:", "\n\nŹródła:"])  
+            stop=["Źródła:", "\nŹródła:", "\n\nŹródła:"]
+        ) 
+        self.gemini_llm = None 
+        google_api_key = os.getenv("GOOGLE_API_KEY")
         
-        self._setup_prompts()
-
+        if google_api_key:
+            print("Znaleziono klucz, próba inicjalizacji Gemini")
+            try:
+                gemini_llm = ChatGoogleGenerativeAI(
+                    model="gemini-3-flash-preview",
+                    google_api_key=google_api_key,
+                    temperature=0.0,
+                    max_retries=0,
+                    stop=["Źródła", "\nŹródła", "\n\nŹródła", "Źródło:", "\nŹródło:", "\n\nŹródło:" ]
+                )
+                
+                self.gemini_llm.invoke("ping")
+                print("Gemini ready to work")
+        
+            except Exception as ex:
+                print(f"Something went wrong {ex}")
+                self.gemini_llm = None 
+        
     def _setup_prompts(self):
         contextualize_q_system_prompt = (
-            "Jesteś precyzyjnym edytorem zapytań. Twoim JEDYNYM zadaniem jest dodanie brakującego kontekstu z historii konwersacji do najnowszego pytania użytkownika, aby było w pełni zrozumiałe bez czytania wcześniejszych wiadomości.\n\n"
+"Jesteś precyzyjnym edytorem zapytań. Twoim JEDYNYM zadaniem jest przeformułowanie najnowszego pytania użytkownika tak, "
+            "aby było w pełni zrozumiałe bez znajomości historii konwersacji.\n\n"
             "ZASADY BEZWZGLĘDNE:\n"
-            "1. Jeśli najnowsze pytanie jest urwane (np. 'co przechowuje?', 'do czego służy?', 'podaj przykład'), wyciągnij podmiot z historii rozmowy i wstaw go do pytania (np. 'co przechowuje CLOB?', 'do czego służy funkcja SQLERRM?').\n"
-            "2. Zwróć TYLKO I WYŁĄCZNIE jedno zdanie – poprawione pytanie.\n"
-            "3. NIE odpowiadaj na to pytanie.\n"
-            "4. ZAKAZ dodawania słów wstępu, takich jak 'Oto pytanie:', 'Pytanie brzmi:' czy 'Użytkownik pyta o:'."
+            "1. Wyciągnij z historii TYLKO główny podmiot/temat (np. 'paczka 40kg', 'funkcja w SQL', 'urlop').\n"
+            "2. ZAKAZ wklejania faktów, cen, wyników i gotowych odpowiedzi z historii. Masz utworzyć PYTANIE, a nie zdanie twierdzące!\n"
+            "3. Zwróć TYLKO I WYŁĄCZNIE samo poprawione pytanie – jedno zdanie.\n"
+            "4. ZAKAZ dodawania słów wstępu (takich jak 'Oto pytanie:', 'Użytkownik pyta o:').\n"
+            "5. Jeśli zapytanie jest już jasne samo w sobie, zwróć je bez żadnych zmian.\n\n"
+            "PRZYKŁADY DO NAŚLADOWANIA:\n"
+            "[Historia] Użytkownik: 'Ile kosztuje wersja Premium?' -> AI: 'Kosztuje 20 zł.'\n"
+            "[Aktualne pytanie] 'a w opcji rocznej?'\n"
+            "[Twój wynik] Ile kosztuje wersja Premium w opcji rocznej?\n\n"
+            "[Historia] Użytkownik: 'Co to jest klucz główny w SQL?' -> AI: 'Klucz główny to unikalny identyfikator...'\n"
+            "[Aktualne pytanie] 'podaj przykład'\n"
+            "[Twój wynik] Podaj przykład klucza głównego w SQL.\n\n"
+            "[Historia] Użytkownik: 'Dla paczki 40kg opłata to 44,99 zł.'\n"
+            "[Aktualne pytanie] 'a co jeśli wyślę w niedzielę?'\n"
+            "[Twój wynik] Jaka jest cena wysłania paczki 40kg w niedzielę?"
             )
         self.contextualize_q_prompt = ChatPromptTemplate.from_messages([
             ("system", contextualize_q_system_prompt),
             MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{question}"),
+            ("human", "Pytanie użytkownika: {question}\n\nZADANIE: Napisz TYLKO I WYŁĄCZNIE przeformułowane zapytanie do wyszukiwarki. ZAKAZ ODPOWIADANIA NA PYTANIE!"),
         ])
 
         qa_system_prompt = (
@@ -111,7 +150,8 @@ class RAGService:
             yield "Cieszę się, że mogłem pomóc! Jakbyś miał jeszcze jakieś pytania, chętnie pomogę!"
             return
         # -------------------------------------------
-
+        t0 = time.time() 
+        
         lc_history = self._convert_history(history)
 
         # 1. Query Rewriting
@@ -120,7 +160,25 @@ class RAGService:
                 prompt = self.contextualize_q_prompt.format_messages(
                     chat_history=lc_history, question=message
                 )
-                standalone_question = self.llm.invoke(prompt).content.strip()
+                
+                try:
+                    response_content = self.ollama_llm.invoke(prompt).content
+                except Exception as ex:
+                    print(f"[WARNING] Ollama padła podczas modyfikacji pytanie {ex}. Uruchamian Gemini")
+                    if self.gemini_llm:
+                        response_content = self.gemini_llm.invoke(prompt).content
+                    else:
+                        raise Exception("Brak zapasowego modelu chmurowego")
+                
+                # Normalizacja: Gemini (lista) vs Ollama (string)
+                if isinstance(response_content, list):
+                    standalone_question = "".join(
+                        item.get("text", "") if isinstance(item, dict) else str(item) 
+                        for item in response_content
+                    ).strip()
+                else:
+                    standalone_question = str(response_content).strip()
+                    
             except Exception as ex:
                 print(f"[Query Rewrite Error]: {ex}")
                 standalone_question = message
@@ -128,33 +186,40 @@ class RAGService:
             standalone_question = message
             
         print(f"\n[DEBUG] ZAPYTANIE DO CHROMA/RERANKERA: '{standalone_question}'\n")
-            
+        
+        "-------"
+        t1 = time.time()
+        print(f"[CZAS] Query Rewriting zajął {t1 -t0:.2f} sekund", flush=True)
+        "-------"
+        
+        
+        
         # 2. Retrieval & Re-ranking
         context_text = ""
         reranked_docs = []
 
         try:
-            initial_docs = self.vector_store.search(standalone_question, k=20)
+            
+            "----"
+            t_chroma_start = time.time()    
+            initial_docs = self.vector_store.search(standalone_question, k=15)
+            t_chroma_end = time.time()
+            print(f"[CZAS] ChromaDB zajęło {t_chroma_end - t_chroma_start:.2f} sekund", flush=True)
+            "----"
             
             found_pages = [doc.metadata.get("page", 0) + 1 for doc in initial_docs]
             print(f"\n[DEBUG] ChromaDB znalazła strony: {found_pages}\n")
             
+            "----"
+            t_rerank_start = time.time()
             reranked_docs = self.reranker.rerank(standalone_question, initial_docs, top_n=4)
+            t_rerank_end = time.time()
+            print(f"[CZAS] reranker zajął {t_rerank_end - t_chroma_start:.2f} sekund")
+            "----"
             
             formatted_chunks = []
-            for doc in reranked_docs:
-                # 1. Bezpieczne pobranie metadanych
-                meta = getattr(doc, "metadata", {}) or {}
-
-                # 2. Nazwa pliku
-                source_raw = meta.get("source") or meta.get("file_name") or "dokument.pdf"
-                source_name = os.path.basename(str(source_raw))
-
-                # 3. Pobranie numeru strony
-                page = meta.get("page")
-                page_str = f" (strona {page + 1})" if page is not None else ""
-
-                formatted_chunks.append(f"[Dokument: {source_name}{page_str}]\n{doc.page_content}")
+            for i, doc in enumerate(reranked_docs):
+               formatted_chunks.append(f"[Fragment wiedzy nr {i+1}]\n{doc.page_content}")
             
             context_text = "\n\n---\n\n".join(formatted_chunks)
                 
@@ -174,12 +239,54 @@ class RAGService:
         )
 
         full_response = "" 
+        print("Start strumieniowania z gemini")
+        t_stream_start = time.time()
+        first_token = True 
         
-        for chunk in self.llm.stream(formatted_prompt):
-            if chunk.content:
-                full_response += chunk.content
-                yield chunk.content
+        def stream_with_model(model, modelName):
+            nonlocal full_response, first_token            
         
+            for chunk in model.stream(formatted_prompt):
+                if first_token:
+                    t_first_token = time.time()
+                    print(f"[CZAS] czas do pierwszego znaku od Gemini {t_first_token - t_stream_start:.2f} sekund", flush=True)
+                    first_token = False 
+                
+                chunk_data = chunk.content
+
+                # Gemini -> lista / Ollama -> string
+                if isinstance(chunk_data, list):
+                    # wyciąganie tekstu ze słowników
+                    text_chunk = "".join(
+                        item.get("text", "") if isinstance(item, dict) else str(item) 
+                        for item in chunk_data
+                    )
+                else:
+                    # String dla Ollamy
+                    text_chunk = str(chunk_data) if chunk_data else ""
+
+                if text_chunk:
+                    full_response += text_chunk
+                    yield text_chunk
+        
+        
+        try:
+            print("\n[INFO] Start strumieniowania z lokalnego Qwena...", flush=True)
+            yield from stream_with_model(self.ollama_llm, "Ollama")
+        except Exception as ex:
+            print(f"\n[WARNING] Błąd lokalnego modelu Ollama: {ex}", flush=True)
+            print("[INFO] Odpalam koło ratunkowe: przełączam do chmury Gemini...", flush=True)   
+            
+            try:
+                if self.gemini_llm:
+                    first_token = True 
+                    yield from stream_with_model(self.gemini.llm, "Gemini")
+                else:
+                    raise Exception("Model gemini nie został zainicjalizowany")
+            except Exception as ex:
+                print("Gemini zawiodło", flush=True)
+                yield "\n Systemy AI są obecnie niedostępne. Spróbuj ponownie później"
+                
         is_refusal = (
             "Nie jestem w stanie" in full_response or "Dostarczone dokumenty nie zawierają informacji na zadane pytanie." in full_response
         )
