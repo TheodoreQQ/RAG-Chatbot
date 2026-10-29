@@ -29,7 +29,7 @@ class RAGService:
             base_url=ollama_url,
             temperature=0.0,
             num_ctx=4096,
-            stop=["Źródła:", "\nŹródła:", "\n\nŹródła:"]
+            stop=["Źródła:", "\nŹródła:", "\n\nŹródła:", "Źródło:", "\nŹródło:", "\n\nŹródło:"]
         ) 
         self.gemini_llm = None 
         google_api_key = os.getenv("GOOGLE_API_KEY")
@@ -42,10 +42,9 @@ class RAGService:
                     google_api_key=google_api_key,
                     temperature=0.0,
                     max_retries=0,
-                    stop=["Źródła", "\nŹródła", "\n\nŹródła", "Źródło:", "\nŹródło:", "\n\nŹródło:" ]
+                    stop=["Źródła:", "\nŹródła:", "\n\nŹródła:", "Źródło:", "\nŹródło:", "\n\nŹródło:" ]
                 )
                 
-                self.gemini_llm.invoke("ping")
                 print("Gemini ready to work")
         
             except Exception as ex:
@@ -54,7 +53,7 @@ class RAGService:
         
     def _setup_prompts(self):
         contextualize_q_system_prompt = (
-"Jesteś precyzyjnym edytorem zapytań. Twoim JEDYNYM zadaniem jest przeformułowanie najnowszego pytania użytkownika tak, "
+            "Jesteś precyzyjnym edytorem zapytań. Twoim JEDYNYM zadaniem jest przeformułowanie najnowszego pytania użytkownika tak, "
             "aby było w pełni zrozumiałe bez znajomości historii konwersacji.\n\n"
             "ZASADY BEZWZGLĘDNE:\n"
             "1. Wyciągnij z historii TYLKO główny podmiot/temat (np. 'paczka 40kg', 'funkcja w SQL', 'urlop').\n"
@@ -148,8 +147,6 @@ class RAGService:
         if msg_clean in thanks:
             yield "Cieszę się, że mogłem pomóc! Jakbyś miał jeszcze jakieś pytania, chętnie pomogę!"
             return
-        # -------------------------------------------
-        t0 = time.time() 
         
         lc_history = self._convert_history(history)
 
@@ -184,37 +181,18 @@ class RAGService:
         else:
             standalone_question = message
             
-        print(f"\n[DEBUG] ZAPYTANIE DO CHROMA/RERANKERA: '{standalone_question}'\n")
-        
-        "-------"
-        t1 = time.time()
-        print(f"[CZAS] Query Rewriting zajął {t1 -t0:.2f} sekund", flush=True)
-        "-------"
-        
-        
-        
         # 2. Retrieval & Re-ranking
         context_text = ""
         reranked_docs = []
 
         try:
             
-            "----"
-            t_chroma_start = time.time()    
             initial_docs = self.vector_store.search(standalone_question, k=15)
-            t_chroma_end = time.time()
-            print(f"[CZAS] ChromaDB zajęło {t_chroma_end - t_chroma_start:.2f} sekund", flush=True)
-            "----"
             
             found_pages = [doc.metadata.get("page", 0) + 1 for doc in initial_docs]
             print(f"\n[DEBUG] ChromaDB znalazła strony: {found_pages}\n")
             
-            "----"
-            t_rerank_start = time.time()
             reranked_docs = self.reranker.rerank(standalone_question, initial_docs, top_n=4)
-            t_rerank_end = time.time()
-            print(f"[CZAS] reranker zajął {t_rerank_end - t_chroma_start:.2f} sekund")
-            "----"
             
             formatted_chunks = []
             for i, doc in enumerate(reranked_docs):
@@ -238,19 +216,11 @@ class RAGService:
         )
 
         full_response = "" 
-        print("Start strumieniowania z gemini")
-        t_stream_start = time.time()
-        first_token = True 
         
-        def stream_with_model(model, modelName):
+        def stream_with_model(model):
             nonlocal full_response, first_token            
         
             for chunk in model.stream(formatted_prompt):
-                if first_token:
-                    t_first_token = time.time()
-                    print(f"[CZAS] czas do pierwszego znaku od Gemini {t_first_token - t_stream_start:.2f} sekund", flush=True)
-                    first_token = False 
-                
                 chunk_data = chunk.content
 
                 # Gemini -> lista / Ollama -> string
@@ -271,7 +241,7 @@ class RAGService:
         
         try:
             print("\n[INFO] Start strumieniowania z lokalnego Qwena...", flush=True)
-            yield from stream_with_model(self.ollama_llm, "Ollama")
+            yield from stream_with_model(self.ollama_llm)
         except Exception as ex:
             print(f"\n[WARNING] Błąd lokalnego modelu Ollama: {ex}", flush=True)
             print("[INFO] Odpalam koło ratunkowe: przełączam do chmury Gemini...", flush=True)   
@@ -279,7 +249,7 @@ class RAGService:
             try:
                 if self.gemini_llm:
                     first_token = True 
-                    yield from stream_with_model(self.gemini_llm, "Gemini")
+                    yield from stream_with_model(self.gemini_llm)
                 else:
                     raise Exception("Model gemini nie został zainicjalizowany")
             except Exception as ex:
@@ -315,7 +285,7 @@ class RAGService:
             if formatted_sources:
                 sources_output = "\n\nŹródła: " + "; ".join(formatted_sources)
                 yield sources_output
-                
+
     def generate_response(self, message: str, history: List[ChatMessage]) -> str:
         return "".join(list(self.generate_streaming_response(message, history)))
         
