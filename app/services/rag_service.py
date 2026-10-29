@@ -11,7 +11,6 @@ from app.models import ChatMessage
 from app.core.document_loader import DocumentLoader
 from app.core.vector_store import VectorStoreManager
 from app.core.reranker import Reranker
-from fastapi.responses import StreamingResponse
 class RAGService:
     def __init__(self):
         self.loader = DocumentLoader()
@@ -280,7 +279,7 @@ class RAGService:
             try:
                 if self.gemini_llm:
                     first_token = True 
-                    yield from stream_with_model(self.gemini.llm, "Gemini")
+                    yield from stream_with_model(self.gemini_llm, "Gemini")
                 else:
                     raise Exception("Model gemini nie został zainicjalizowany")
             except Exception as ex:
