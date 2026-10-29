@@ -26,6 +26,9 @@ services:
       - "8000:8000"
     volumes:
       - ./documents:/app/documents
+    
+    env_file:
+      - .env
     # Set backend and integration connection settings.
     environment:
       # Bind the API to all interfaces inside its container.
