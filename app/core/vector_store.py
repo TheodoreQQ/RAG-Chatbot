@@ -19,7 +19,7 @@ class VectorStoreManager:
         chroma_port = int(os.getenv("CHROMA_PORT", 8000))
 
         if chroma_host:
-            # 🟢 W DOCKERZE: Łączenie z osobnym kontenerem ChromaDB przez HTTP
+            # W DOCKERZE: Łączenie z osobnym kontenerem ChromaDB przez HTTP
             client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
             self.vector_store = Chroma(
                 client=client,
@@ -27,7 +27,7 @@ class VectorStoreManager:
                 embedding_function=self.embeddings
             )
         else:
-            # 🟢 LOKALNIE: Dotychczasowy zapis w folderze na dysku
+            # LOKALNIE: Dotychczasowy zapis w folderze na dysku
             self.vector_store = Chroma(
                 persist_directory=CHROMA_PATH,
                 embedding_function=self.embeddings

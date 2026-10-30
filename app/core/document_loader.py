@@ -19,7 +19,6 @@ class DocumentLoader:
         
     chunks = self.text_splitter.split_documents(documents)
         
-    # Stosujemy jednolite metadane 'source'
     for chunk in chunks:
       chunk.metadata["source"] = clean_filename
             

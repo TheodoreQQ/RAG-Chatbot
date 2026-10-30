@@ -15,7 +15,7 @@ app = FastAPI(
 # Konfiguracja CORS (umożliwia komunikację z frontendem w React)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,  # W środowisku produkcyjnym podaj konkretny URL np. "http://localhost:5173"
+    allow_origins=ALLOWED_ORIGINS,  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -14,17 +14,17 @@ class Reranker:
         pairs = [[query, doc.page_content] for doc in valid_docs]
         scores = self.model.predict(pairs)
 
-        # 1. Łączymy w pary i od razu sortujemy od najlepszego wyniku do najgorszego
+        # 1. Łączenie w pary i sortowanie od najlepszego wyniku do najgorszego
         doc_score_pairs = [(score, doc) for score, doc in zip(scores, valid_docs)]
         doc_score_pairs.sort(key=lambda x: x[0], reverse=True)
 
-        # 2. Pobieramy wynik najlepszego dokumentu (lidera)
+        # 2. Pobieranie wyniku najlepszego dokumentu
         best_score = doc_score_pairs[0][0]
         
         print(f"\n--- DEBUG RERANKERA ---")
 
-        # 3. Odsiew relatywny: bierzemy maksymalnie top_n dokumentów, 
-        # ale odrzucamy te, które są słabsze od lidera o więcej niż 4 punkty.
+        # 3. Odsiew relatywny: uwzględniane maksymalnie top_n dokumentów, 
+        # ale odrzucane są te, które są słabsze od lidera o więcej niż 0.3 punkta.
         min_score = 0.05
         
         filtered_docs = []

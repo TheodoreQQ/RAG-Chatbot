@@ -12,12 +12,9 @@ CHROMA_PATH = os.getenv("CHROMA_PATH", "./chroma_db")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:7b")
 
-# raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173, *")
-# ALLOWED_ORIGINS = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
-
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "*"  # 🟢 Zezwala na połączenia z lokalnych plików .html
+    "*"  # Zezwala na połączenia z lokalnych plików .html
 ]
 os.makedirs(UPLOAD_DIR, exist_ok=True)

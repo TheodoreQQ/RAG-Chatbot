@@ -35,7 +35,7 @@ async def upload_documents(file: UploadFile = File(...)):
   except Exception as ex:
     raise HTTPException(status_code=500, detail=f"Błąd zapisu pliku na dysku: {str(ex)}")
     
-  # 2. Indeksowanie w ChromaDB (przez nasz wydzielony service)
+  # 2. Indeksowanie w ChromaDB 
   try: 
     rag_service.add_document(file_path, clean_filename)
   except ValueError as ve:
@@ -62,7 +62,7 @@ async def delete_document(filename: str):
   except Exception as e:
     print(f"[OSTRZEŻENIE ChromaDB] Błąd usuwania wektorów: {e}")
 
-  # 2. Zwolnienie uchwytów (dla Windowsa)
+  # 2. Zwolnienie uchwytów 
   gc.collect()
 
   # 3. Usuwanie pliku z dysku
