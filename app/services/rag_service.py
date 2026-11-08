@@ -1,5 +1,5 @@
 import os
-import time 
+import requests
 from typing import List, Generator
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -22,33 +22,35 @@ class RAGService:
 
 
     def _initialize_llms(self):
-        print("Uruchamiam główny model Ollama Qwen2.5")
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        print("Inicjalizacja modeli LLM...")
+        
+        # 1. Główny model lokalny (Ollama)
+        self.ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
         self.ollama_llm = ChatOllama(
             model=LLM_MODEL,
-            base_url=ollama_url,
+            base_url=self.ollama_url,
             temperature=0.0,
             num_ctx=4096,
-            stop=["Źródła:", "\nŹródła:", "\n\nŹródła:", "Źródło:", "\nŹródło:", "\n\nŹródło:"]
+            stop=["Źródła:", "\nŹródła:", "Źródło:", "\nŹródło:"]
         ) 
+        
+        # 2. Awaryjny model chmurowy (Gemini)
         self.gemini_llm = None 
         google_api_key = os.getenv("GOOGLE_API_KEY")
         
         if google_api_key:
-            print("Znaleziono klucz, próba inicjalizacji Gemini")
+            print("Znaleziono klucz, inicjalizacja Gemini...")
             try:
-                gemini_llm = ChatGoogleGenerativeAI(
-                    model="gemini-3-flash-preview",
+                self.gemini_llm = ChatGoogleGenerativeAI(
+                    model="gemini-3-flash-preview", 
                     google_api_key=google_api_key,
                     temperature=0.0,
                     max_retries=0,
-                    stop=["Źródła:", "\nŹródła:", "\n\nŹródła:", "Źródło:", "\nŹródło:", "\n\nŹródło:" ]
+                    stop=["Źródła:", "\nŹródła:", "Źródło:", "\nŹródło:"]
                 )
-                
-                print("Gemini ready to work")
-        
+                print("Gemini gotowe do pracy jako Fallback")
             except Exception as ex:
-                print(f"Something went wrong {ex}")
+                print(f"Błąd inicjalizacji Gemini: {ex}")
                 self.gemini_llm = None 
         
     def _setup_prompts(self):
@@ -133,6 +135,7 @@ class RAGService:
     def generate_streaming_response(self, message: str, history: List[ChatMessage]) -> Generator[str, None, None]:
         """Główna logika RAG zwracająca strumień tokenów na żywo."""
         
+        is_error = False 
         # --- 0. EARLY EXIT (Obsługa small talku) ---
         msg_clean = message.strip().lower().rstrip('.!')
 
@@ -158,9 +161,12 @@ class RAGService:
                 )
                 
                 try:
+                    url_to_ping = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+                    requests.get(url_to_ping, timeout=1.5)
+                    
                     response_content = self.ollama_llm.invoke(prompt).content
                 except Exception as ex:
-                    print(f"[WARNING] Ollama padła podczas modyfikacji pytanie {ex}. Uruchamian Gemini")
+                    print(f"Ollama padła podczas modyfikacji pytanie {ex}. Uruchamian Gemini")
                     if self.gemini_llm:
                         response_content = self.gemini_llm.invoke(prompt).content
                     else:
@@ -240,27 +246,27 @@ class RAGService:
         
         
         try:
+            requests.get("http://host.docker.internal:11434", timeout=1.5)
             print("\n[INFO] Start strumieniowania z lokalnego Qwena...", flush=True)
             yield from stream_with_model(self.ollama_llm)
-        except Exception as ex:
-            print(f"\n[WARNING] Błąd lokalnego modelu Ollama: {ex}", flush=True)
-            print("[INFO] Odpalam koło ratunkowe: przełączam do chmury Gemini...", flush=True)   
             
+        except Exception as ex:
+            print(f"\n[WARNING] Padła Ollama. Fallback do Gemini...", flush=True)
             try:
                 if self.gemini_llm:
                     first_token = True 
                     yield from stream_with_model(self.gemini_llm)
                 else:
-                    raise Exception("Model gemini nie został zainicjalizowany")
-            except Exception as ex:
-                print("Gemini zawiodło", flush=True)
-                yield "\n Systemy AI są obecnie niedostępne. Spróbuj ponownie później"
+                    raise Exception("Model gemini nie zainicjalizowany")
+            except Exception as ex2:
+                yield "\nSystemy AI są obecnie niedostępne. Spróbuj ponownie później."
+                is_error = True
                 
         is_refusal = (
             "Nie jestem w stanie" in full_response or "Dostarczone dokumenty nie zawierają informacji na zadane pytanie." in full_response
         )
                 
-        if not is_refusal and reranked_docs:
+        if not is_refusal and reranked_docs and not is_error:
             sources_dict = {}
             for doc in reranked_docs:
                 meta = getattr(doc, "metadata", {}) or {}
