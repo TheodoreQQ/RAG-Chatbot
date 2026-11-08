@@ -1,9 +1,56 @@
+# ========================
+# 1. Zmienne środowiskowe i sekrety (KRYTYCZNE)
+# ========================
+.env
+*.env
+.env.*
+
+# ========================
+# 2. Środowisko wirtualne Pythona
+# ========================
 venv/
 .venv/
-node_modules/
-frontend/node_modules/
-frontend/dist/
-chroma_db/
+env/
+Lib/
+Scripts/
+
+# ========================
+# 3. Pamięć podręczna i śmieci Pythona
+# ========================
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ========================
+# 4. Pliki bazy danych i wgrane dokumenty 
+# ========================
+# Zmieniamy stan w czasie działania, więc to powinny być wolumeny, a nie pliki w obrazie!
+chroma_db/
+chroma_data/
+docs/
+documents/
+uploaded_files/
+*.pdf
+
+# ========================
+# 5. Konfiguracja IDE / Edytorów kodu
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ========================
+# 6. Wyniki testów i logi (Locust)
+# ========================
+*.log
+*.csv
+locust_results/
+
+# ========================
+# 7. Git
+# ========================
 .git/
+.gitignore
