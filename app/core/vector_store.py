@@ -18,7 +18,7 @@ class VectorStoreManager:
             base_url=self.ollama_base_url
         )
         
-        # 2. Embeddings awaryjne dla Gemini
+        # 2. Embeddings dla Gemini
         google_api_key = os.getenv("GOOGLE_API_KEY")
         self.emb_gemini = GoogleGenerativeAIEmbeddings(
             model="gemini-embedding-001",
@@ -33,7 +33,7 @@ class VectorStoreManager:
         else:
             client = chromadb.PersistentClient(path=CHROMA_PATH)
 
-        # TWORZYMY DWIE OSOBNE KOLEKCJE W BAZIE!
+        # stworzenie dwóch osobnych kolekcji
         self.store_ollama = Chroma(
             client=client,
             collection_name="docs_ollama",
@@ -47,7 +47,7 @@ class VectorStoreManager:
         )
 
     def add_documents(self, documents: List[Document]):
-        # DUAL-INDEXING: Zapisujemy do obu kolekcji
+        # zapis do obu kolekcji
         try:
             requests.get(self.ollama_base_url, timeout=2)
         except Exception: 
@@ -69,7 +69,7 @@ class VectorStoreManager:
             print(f"[WARNING] Błąd zapisywania wektorów w Gemini: {e}")
 
     def search(self, query: str, k: int = 20) -> List[Document]:
-        # DYNAMICZNY FALLBACK: Sprawdzamy przy każdym pytaniu, czy Ollama żyje
+        # dynamiczny fallback, sprawdzenie przy każdym pytaniu, czy Ollama żyje
         try:
             import requests
             requests.get(self.ollama_base_url, timeout=1.5)
@@ -78,7 +78,7 @@ class VectorStoreManager:
             retriever = self.store_ollama.as_retriever(search_kwargs={"k": k})
             return retriever.invoke(query)
         except Exception as e:
-            # Ollama leży -> wyciągamy dane z kolekcji Gemini!
+            # Ollama leży -> wyciąganie danych z kolekcji Gemini
             print("[WARNING] Ollama wyłączona! Wyszukiwanie w wektorach: Gemini")
             retriever = self.store_gemini.as_retriever(search_kwargs={"k": k})
             return retriever.invoke(query)
