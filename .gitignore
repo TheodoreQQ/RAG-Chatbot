@@ -1,29 +1,24 @@
-# Środowisko wirtualne Python
+# środowisko wirtualne Python
 venv/
 ENV/
 env/
 .venv/
 
-# Klucze, ścieżki i zmienne środowiskowe (BARDZO WAŻNE)
+# klucze, ścieżki i zmienne środowiskowe
 .env
 
-# Baza wektorowa ChromaDB (generowana lokalnie, waży dużo)
+# baza wektorowa ChromaDB 
 chroma_db/
 documents/*.pdf
 
-# Pliki podręczne Pythona (bytecode)
+# pliki podręczne Pythona (bytecode)
 __pycache__/
 *.py[cod]
 
-# Pliki dokumentów (jeśli plik PDF zawiera prywatne dane, odkomentuj poniższą linię)
-# *.pdf
+# pliki dokumentów 
+*.pdf
 
-# Pliki systemowe i edytorów
-.DS_Store
-.vscode/
-.idea/
-
-# Front
+# front
 node_modules/
 dist/
 
@@ -41,7 +36,7 @@ dist-ssr
 *.local
 .venv
 
-# Editor directories and files
+# pliki i katalogi vscode
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -52,5 +47,5 @@ dist-ssr
 *.sln
 *.sw?
 
-# tests
+# testy
 locustfile.py
