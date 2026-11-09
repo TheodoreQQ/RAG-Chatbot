@@ -140,13 +140,13 @@ class RAGService:
         msg_clean = message.strip().lower().rstrip('.!')
 
         # Przechwytywanie powitań
-        greetings = ["cześć", "czesc", "hej", "witaj", "witam", "dzień dobry", "siema", "dobry wieczór", "hejka", "siemanko"]
+        greetings = {"cześć", "czesc", "hej", "witaj", "witam", "dzień dobry", "siema", "dobry wieczór", "hejka", "siemanko"}
         if msg_clean in greetings:
             yield "Cześć! W czym mogę Ci dzisiaj pomóc?"
             return
 
         # Przechwytywanie podziękowań
-        thanks = ["dziękuję", "dziekuje", "dzieki", "dzięki", "super", "super dzięki", "jasne, dzięki", "ok dzięki", "wielkie dzięki", "super, dzięki"]
+        thanks = {"dziękuję", "dziekuje", "dzieki", "dzięki", "super", "super dzięki", "jasne, dzięki", "ok dzięki", "wielkie dzięki", "super, dzięki"}
         if msg_clean in thanks:
             yield "Cieszę się, że mogłem pomóc! Jakbyś miał jeszcze jakieś pytania, chętnie pomogę!"
             return
@@ -161,8 +161,7 @@ class RAGService:
                 )
                 
                 try:
-                    url_to_ping = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
-                    requests.get(url_to_ping, timeout=1.5)
+                    requests.get(self.ollama_llm, timeout=1.5)
                     
                     response_content = self.ollama_llm.invoke(prompt).content
                 except Exception as ex:
@@ -224,7 +223,7 @@ class RAGService:
         full_response = "" 
         
         def stream_with_model(model):
-            nonlocal full_response, first_token            
+            nonlocal full_response           
         
             for chunk in model.stream(formatted_prompt):
                 chunk_data = chunk.content
@@ -246,7 +245,7 @@ class RAGService:
         
         
         try:
-            requests.get("http://host.docker.internal:11434", timeout=1.5)
+            requests.get(self.ollama_url, timeout=1.5)
             print("\n[INFO] Start strumieniowania z lokalnego Qwena...", flush=True)
             yield from stream_with_model(self.ollama_llm)
             
@@ -254,7 +253,6 @@ class RAGService:
             print(f"\n[WARNING] Padła Ollama. Fallback do Gemini...", flush=True)
             try:
                 if self.gemini_llm:
-                    first_token = True 
                     yield from stream_with_model(self.gemini_llm)
                 else:
                     raise Exception("Model gemini nie zainicjalizowany")
