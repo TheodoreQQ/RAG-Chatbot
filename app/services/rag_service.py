@@ -33,6 +33,7 @@ class RAGService:
             num_ctx=4096,
             stop=["Źródła:", "\nŹródła:", "Źródło:", "\nŹródło:"]
         ) 
+        print(f"Ollama gotowa do pracy na adresie {self.ollama_url}")
         
         # 2. Awaryjny model chmurowy (Gemini)
         self.gemini_llm = None 
@@ -161,7 +162,7 @@ class RAGService:
                 )
                 
                 try:
-                    requests.get(self.ollama_llm, timeout=1.5)
+                    requests.get(self.ollama_url, timeout=1.5)
                     
                     response_content = self.ollama_llm.invoke(prompt).content
                 except Exception as ex:
