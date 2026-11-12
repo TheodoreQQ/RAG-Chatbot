@@ -78,7 +78,7 @@ export default function AdminPanel() {
     }
   };
 
-  // Pomocnicza funkcja do bezpiecznego odczytu nazwy pliku
+  // pomocnicza funkcja do bezpiecznego odczytu nazwy pliku
   const getDocName = (doc) => {
     if (typeof doc === 'string') return doc;
     if (typeof doc === 'object' && doc !== null) return doc.filename || doc.name || doc.title || '';
