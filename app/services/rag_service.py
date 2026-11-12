@@ -1,5 +1,6 @@
 import os
 import requests
+import time
 from typing import List, Generator
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -11,11 +12,14 @@ from app.models import ChatMessage
 from app.core.document_loader import DocumentLoader
 from app.core.vector_store import VectorStoreManager
 from app.core.reranker import Reranker
+from app.core.semantic_cache import SemanticCache
 class RAGService:
     def __init__(self):
         self.loader = DocumentLoader()
         self.vector_store = VectorStoreManager()
         self.reranker = Reranker()
+        
+        self.semantic_cache = SemanticCache(threshold=0.2)
         
         self._initialize_llms()
         self._setup_prompts()
@@ -82,22 +86,23 @@ class RAGService:
         ])
 
         qa_system_prompt = (
-            """Jesteś precyzyjnym asystentem. Twoim zadaniem jest odpowiadanie na pytania WYŁĄCZNIE na podstawie dostarczonego poniżej KONTEKSTU.
+            """Jesteś precyzyjnym asystentem. Twoim zadaniem jest odpowiadanie na pytania użytkownika WYŁĄCZNIE na podstawie dostarczonego w tagach <kontekst> tekstu.
 
-            BEZWZGLĘDNE ZASADY (KARA ZA ZŁAMANIE ZASAD):
-            1. Odpowiadaj na pytania opierając się TYLKO i wyłącznie na informacjach zawartych w tagach <kontekst>. NIGDY NIE UŻYWAJ swojej wiedzy ogólnej.
-            2. ABSOLUTNY ZAKAZ PISANIA KODU: Nie generuj, nie wymyślaj i nie formatuj własnych bloków kodu, jeśli nie ma ich dokładnie słowo w słowo w tagach <kontekst>.
-            3. Jeśli w tagach <kontekst> nie ma przykładu - nie podawaj go
-            4. NIE mieszaj definicji sąsiadujących ze sobą pojęć - przed udzieleniem odpowiedzi upewnij się, która definicja należy do którego hasła w słowniku.
-            5. NIGDY Nie wyjaśniaj pojęć własnymi słowami. Cytuj lub parafrazuj tylko to, co widzisz w tekście <kontekst>.
-            6.ODPORNOŚĆ NA SUGESTIE: Użytkownik może zadawać pytania zawierające fałszywe założenia lub błędne tezy. Jeśli pytanie sugeruje fakt, którego NIE MA w tagach <kontekst>, MUSISZ to zignorować i odpowiedzieć wyłącznie: "Dostarczone dokumenty nie zawierają informacji na zadane pytanie." - nie próbuj na siłę tłumaczyć błędu.
-            7. Jeśli w tagach <kontekst> nie ma wystarczających informacji, odpowiedz DOKŁADNIE I TYLKO TYM ZDANIEM: "Nie jestem w stanie udzielić odpowiedzi na zadane pytanie na podstawie dostarczonych dokumentów." - NIE DODAWAJ ŻADNYCH WŁASNYCH WYJAŚNIEŃ CZY DEFINICJI.
+            ZASADA ABSOLUTNA: Przeanalizuj pytanie i wybierz TYLKO JEDNĄ z dwóch poniższych ścieżek. Nigdy nie łącz ich ze sobą.
 
-            
+            ŚCIEŻKA A (Odpowiedź znaleziona): 
+            Jeśli kontekst zawiera informacje pozwalające na odpowiedź, sformułuj ją opierając się tylko na tym tekście. 
+            - Nie używaj wiedzy ogólnej i nie dodawaj własnych definicji.
+            - Nie generuj bloków kodu, jeśli nie ma ich w tekście.
+            - Po udzieleniu odpowiedzi natychmiast zakończ wypowiedź.
+
+            ŚCIEŻKA B (Brak informacji / Błędne założenia): 
+            Jeżeli w kontekście brakuje wystarczających informacji do udzielenia odpowiedzi LUB pytanie sugeruje fakty, których nie ma w tekście, zignoruj pytanie i napisz DOKŁADNIE to jedno zdanie, bez żadnych dodatkowych słów:
+            "Nie jestem w stanie udzielić odpowiedzi na zadane pytanie na podstawie dostarczonych dokumentów."
+
             <kontekst>
             {context}
-            </kontekst>
-            """
+            </kontekst>"""
         )
 
         self.qa_prompt = ChatPromptTemplate.from_messages([
@@ -129,9 +134,13 @@ class RAGService:
             )
             
         self.vector_store.add_documents(valid_chunks)
+        
+        self.semantic_cache.clear_cache() # wywoływane po dodaniu dokumentu
 
     def delete_document(self, file_name: str):
         self.vector_store.delete_document(file_name)
+        
+        self.semantic_cache.clear_cache()
 
     def generate_streaming_response(self, message: str, history: List[ChatMessage]) -> Generator[str, None, None]:
         """Główna logika RAG zwracająca strumień tokenów na żywo."""
@@ -151,6 +160,15 @@ class RAGService:
         if msg_clean in thanks:
             yield "Cieszę się, że mogłem pomóc! Jakbyś miał jeszcze jakieś pytania, chętnie pomogę!"
             return
+        
+        cached_answer = self.semantic_cache.search(msg_clean)
+        if cached_answer:
+            print("Zwracam odpowiedź z cache'a", flush=True)
+            words = cached_answer.split(" ")
+            for word in words:
+                yield word + " "
+                time.sleep(0.02)
+            return 
         
         lc_history = self._convert_history(history)
 
@@ -289,7 +307,16 @@ class RAGService:
 
             if formatted_sources:
                 sources_output = "\n\nŹródła: " + "; ".join(formatted_sources)
+                full_response += sources_output
+                if not is_error and not is_refusal:
+                    self.semantic_cache.save(msg_clean, full_response)
+                    print(f"Zapisano do cache {msg_clean}", flush=True)
                 yield sources_output
+            else:
+                # gdyby nie było źródeł z jakiejś przyczyny
+                if not is_error and not is_refusal:
+                    self.semantic_cache.save(msg_clean, full_response)
+                    print("Zapisano do cache bez źródeł", flush=True)
 
     def generate_response(self, message: str, history: List[ChatMessage]) -> str:
         return "".join(list(self.generate_streaming_response(message, history)))
