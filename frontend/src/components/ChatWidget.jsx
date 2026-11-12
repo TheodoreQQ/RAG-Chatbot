@@ -27,7 +27,7 @@ export default function ChatWidget() {
       e.preventDefault();
     }
 
-    // Blokujemy wysyłanie, gdy trwa proces myślenia LUB pisania
+    // blokada wysyłania, gdy trwa proces myślenia/pisania
     if (!input.trim() || isGenerating) {
       return;
     }
@@ -54,6 +54,14 @@ export default function ChatWidget() {
         }),
       });
 
+      if (response.status == 429){
+        setMessages((prev) => [
+          ...prev,
+          {role: 'assistant', content: 'Wysyłasz pytania zbyt szybko! Odczekaj minutę przed kolejnym zapytaniem.'}
+        ]);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(`Błąd serwera: ${response.status}`);
       }
@@ -73,7 +81,7 @@ export default function ChatWidget() {
         if (chunk) {
           if (isFirstChunk) {
             isFirstChunk = false;
-            setIsThinking(false); // Wyłączamy TYLKO skaczące kropki, ale input DALEJ JEST ZABLOKOWANY!
+            setIsThinking(false); // Wyłączamy TYLKO skaczące kropki, ale input jest nadal zablokowany!
             
             setMessages((prev) => [
               ...prev,
@@ -99,7 +107,7 @@ export default function ChatWidget() {
         { role: 'assistant', content: 'Wystąpił błąd podczas pobierania odpowiedzi.' }
       ]);
     } finally {
-      // Dopiero GDY CAŁY STRUMIEŃ SIĘ SKOŃCZY, odblokowujemy input!
+      // Dopiero gdy cały strumień się skończy, odblokowujemy input!
       setIsThinking(false);
       setIsGenerating(false);
     }
