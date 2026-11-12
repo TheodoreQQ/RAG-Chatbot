@@ -9,7 +9,7 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' });
 
-  // Stan Modala Potwierdzenia Usuwania
+  // stan modala potwierdzenia usuwania
   const [deleteModal, setDeleteModal] = useState({ show: false, fileName: '' });
 
   const fetchDocuments = async () => {
