@@ -1,9 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
-# Importujemy routery z folderu app/routers
+
 from app.routers import chat, documents
 from app.config import ALLOWED_ORIGINS
+from app.core.limiter import limiter
 
 # główna instancję aplikacji FastAPI
 app = FastAPI(
@@ -11,6 +14,9 @@ app = FastAPI(
     description="Backend dla czatbota RAG z obsługą dokumentów PDF i Re-rankingiem",
     version="1.0.0"
 )
+# inicjalizacja limitera
+app.state.limiter = limiter 
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Konfiguracja CORS 
 app.add_middleware(
